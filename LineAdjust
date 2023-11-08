@@ -1,0 +1,67 @@
+#include <Zumo32U4.h>
+
+Zumo32U4Motors motors;
+Zumo32U4LineSensors lineSensors;
+
+const uint16_t I_sort = 900;
+
+void setup() {
+  // put your setup code here, to run once:
+  lineSensors.initFiveSensors();
+
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+
+  lineAdjust();
+
+}
+
+
+void lineAdjust() {
+
+    // motors.setSpeeds(-70, -70);
+    // delay(100);
+
+  for (int i = 0; i <10; i++) {
+
+    uint16_t lineSensorValues[5];
+    while (lineSensorValues[1] < I_sort && lineSensorValues[3] < I_sort) {
+      lineSensors.read(lineSensorValues);
+      motors.setSpeeds(100, 100);
+    } 
+
+    motors.setSpeeds(0, 0);
+
+    if (lineSensorValues[1] > I_sort){ 
+
+      motors.setSpeeds(-80, -80);
+      delay(250);
+      while (lineSensorValues[1] < I_sort + 300) {
+        lineSensors.read(lineSensorValues);
+        Serial.println("left");
+        motors.setSpeeds(0, 120);
+      }
+    }
+    else if (lineSensorValues[3] + 350 > I_sort) {
+
+      motors.setSpeeds(-80, -80);
+      delay(250);
+      while (lineSensorValues[1] < I_sort) {
+        lineSensors.read(lineSensorValues);
+        Serial.println("right");
+        motors.setSpeeds(120 , 0);
+      }
+    }
+
+    lineSensors.read(lineSensorValues);
+    Serial.println(lineSensorValues[1]);
+    Serial.println(lineSensorValues[3]);
+
+    Serial.println(i);
+  }
+  motors.setSpeeds(100, 100);
+  delay(1000);
+  
+}
