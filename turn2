@@ -1,0 +1,76 @@
+#include <Zumo32U4Motors.h>
+#include <Wire.h>
+#include <Zumo32U4.h>
+
+
+Zumo32U4Motors motors;
+Zumo32U4Encoders encoders;
+
+float wheelCirc = 3.7*3.14;
+  int speed1 = 100;
+  int speed2 = 100;
+
+void setup() {
+  // Initialize any other things if needed
+}
+
+void loop() {
+
+  float r1 = 21.5;  // You can change this value
+  float r2 = r1 + 8.5;  // 8.5 cm is the distance between the wheels
+  float n = r2 - r1;
+
+  float C1 = 2 * 3.14159 * r1;
+  float C2 = 2 * 3.14159 * r2;
+
+  float e1 = (getDistanceL()-8.5/2)/(getDistanceR()+8.5/2);
+  float e2 = (getDistanceR()-8.5/2)/(getDistanceL()+8.5/2);
+
+  float turnDiffI = (n-8.5/2)/(n+8.5/2);
+  float turnDiffO = (n+8.5/2)/(n-8.5/2);
+
+  if (e2 == 0 || e1 == 0) {
+    e2 = 1;
+    e1 = 1;
+  }
+
+  float errorL = turnDiffI - e1;
+  float errorR = turnDiffO - e2;
+
+  Serial.print(errorL);
+  Serial.print(", ");
+  Serial.println(errorR);
+
+  int base_speed = 100;  // This is the speed you want one wheel to rotate at
+  speed1 -= errorL - errorR;
+  speed2 -= errorR - errorL;
+
+  motors.setSpeeds(speed1, speed2);
+}
+
+
+float getDistanceL(){
+// Example for reading out the count from the wheels. Uncomment, compile and try out.
+// Open the serial monitor and move the wheels by hand.
+  
+  int countsL = encoders.getCountsLeft();
+  int countsR = encoders.getCountsRight();
+
+  Serial.println("Move my wheels.... counts L " + (String)countsL + " R " + (String)countsR);
+  
+  return wheelCirc/900*countsL; // change to the distance calculated by your code
+
+}
+
+float getDistanceR(){
+// Example for reading out the count from the wheels. Uncomment, compile and try out.
+// Open the serial monitor and move the wheels by hand.
+  
+  int countsL = encoders.getCountsLeft();
+  int countsR = encoders.getCountsRight();
+
+  Serial.println("Move my wheels.... counts L " + (String)countsL + " R " + (String)countsR);
+  
+  return wheelCirc/900*countsR; // change to the distance calculated by your code
+
+}
