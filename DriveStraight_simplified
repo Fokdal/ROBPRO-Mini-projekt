@@ -34,7 +34,11 @@ void setup() {
 }
 
 void loop() {
-  // update turn angle
+  driveStraight();
+}
+
+void driveStraight() {
+    // update turn angle
   imu.readGyro();
   turnRate = imu.g.z - gyroOffset;
   uint16_t m = micros();
