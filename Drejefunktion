@@ -1,0 +1,45 @@
+#include <Zumo32U4Motors.h>
+#include <Wire.h>
+#include <Zumo32U4.h>
+
+
+Zumo32U4Motors motors;
+Zumo32U4Encoders encoders;
+
+int32_t e1 = 1;
+int32_t e2 = 1;
+
+
+
+void setup() {
+  // put your setup code here, to run once:
+ 
+
+
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  float wheelCirc = 3.7*3.14;
+  int speed1 = 100;
+  int speed2 = 100;
+  int angle = 30;
+  e1 += encoders.getCountsAndResetLeft();
+  e2 += encoders.getCountsAndResetRight();
+
+  float r = 20;  // You can change this value
+  float r1 = r - 4.25;
+  float r2 = r + 4.25;  // 8.5 cm is the distance between the wheels
+
+  float C1 = 2 * 3.14159 * r1;
+  float C2 = 2 * 3.14159 * r2;
+
+  float errorL = (e2/(e1*1.0) * C1 - C2);
+  float errorR = (e1/(e2*1.0) * C2 - C1);
+  float VL = (angle/180) * r1 * 3.14159;
+  float VR = (angle/180) * r2 * 3.14159;
+
+  motors.setSpeeds(speed1 * VL, speed2 * VR);
+  Serial.println(errorL + 100 - errorR);
+  delay(50);
+}
