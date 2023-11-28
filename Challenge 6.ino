@@ -5,12 +5,10 @@ Programmed by:
  - Rasmus Dueholm Kristiansen
 
 */
-#include <Wire.h>
 #include <Zumo32U4.h>
 
 
 Zumo32U4Motors motors;
-Zumo32U4IMU imu;
 Zumo32U4Encoders encoders;
 Zumo32U4LineSensors lineSensors;
 
