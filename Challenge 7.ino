@@ -236,21 +236,21 @@ class Calibrator {
     }
 
     // Function to turn the ZUMO using math and 
-    void turnByEncoder(float degrees) {
+    void turnByEncoder(float angle) {
       resetEncoders();
       
       // Direction and the distance already turned.
       int direction = 1;                                                      
       float turnedDist = 0;
     
-      if (degrees < 0) {
+      if (angle < 0) {
         direction = -1;
       }
 
       // While loop untill the robot has rotated the specified amount. 
-      while (turnedDist < 85 * PI * abs(degrees) / (2 * PI)) {
+      while (turnedDist < 85 * PI * abs(angle) / (2 * PI)) {
         // The closer it is to being finished rotating, the slower it will go to prevent overshooting the specified distance.
-        int deacceleration = 35 / (1 + 85 * PI * abs(degrees)) / (2 * PI - abs(turnedDist));
+        int deacceleration = 35 / (1 + 85 * PI * abs(angle)) / (2 * PI - abs(turnedDist));
         int turningSpeed = calibrateSpeed - deacceleration;
 
         //Turns in place.
