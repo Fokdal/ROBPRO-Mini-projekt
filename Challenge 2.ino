@@ -1,137 +1,121 @@
 /*
-Line sensor following programme for ZUMO 32u4
+Line follower
+
+Programmed by:
+ - Rasmus Dueholm Kristiansen
+
 */
-
-
-#include <Wire.h>
 #include <Zumo32U4.h>
+
 
 Zumo32U4Motors motors;
 Zumo32U4LineSensors lineSensors;
 
-const int lineSensorsAmount = 5; //Amount of linesensors
-const float exponentFactor = 4.5; //For calculating how much the robot is off path, this formular is used: ax^n where this variable corresponds to n.
-const float multiplier = 1.5; //Original 1.5 For calculating how much the robot is off path, this formular is used: ax^n where this variable corresponds to a.
+uint64_t prevTime = 0;                                                                          // Time for previous adjustment. Used to get the delta time
+float prevError = 0;                                                                            // Error for previous adjustment. Used to get the delta error.
 
-const int maxSpeed = 400; // Maxiumum speed for the robot
-const int maxSpeedWhenNoSensors = 400; //Maximum speed when no sensor is seeing a path (hopefully only happens, when the sensor is off path.)
-const int minSpeed = 100; //Minimum speed. Must be set as the robto can't drive at very low speeds (below 100.). The absolute speed cant get below 100.
-const int maxNegativeSpeed = -350; // Maximum negative speed.
-const int speedFactor = 40; // Used to calculate the final speed. Here the formular speedFactor * lineSensorOutputSum + defaultSpeed is used, where lineSensorOutputSum = multiplier * sensorOffset^exponentFactor.
+const float mappingMaxValue = 100;                                                              // Before the programme is started, each sensor is calibrated. This is then when the programme is running mapped into a scale from 0 to 100.
 
-const int calibrationAmount = 200; // Amount of calibrations
-const int offsetMin = 100; // Difference between the calibrated surface and the line.
-const int offsetMax = 100;
-const float offsetFactor = 1;
+// Variables for the PID controller
+const float k_p = 0.55;
+const float k_i = 0.8;
+const float k_d = 20;
 
+// Other variables controlling the movement.
+const int defaultSpeed = 400;
+const int minSpeed = 300;
+const float defactorAcc = 400/(defaultSpeed * 1.0);
+const float defactor = 200/(defaultSpeed * 1.0);
 
-int defaultSpeed = maxSpeed; // Variable controlling the max speed.
-int lineSensorLastSensorReading = 0; // If it doesn't detect anything with its linesensors, it performs the same movement based on what the previous line sensors read.
+const float startOffset = 20;                                                                   // When the programme starts, the ZUMO is offsat, so it has to drive a shorter route.
 
-uint16_t calibrationValues[lineSensorsAmount] = {0, 0, 0, 0, 0}; // Calibration values when calibrating
+const int calibrationSpeed = 200;                                                               // Speed for calibrating
+const int calibrationAmount = 200;                                                              // Amount of calibrations.
 
-// Setup function. Initialises the five sensors and calibrates them. 
-void setup() {
-  lineSensors.initFiveSensors(); // Initialization 
-  Serial.begin(9600); // Beginning the serial port
-  lineSensorCalibrate(); // Calibrates the sensors
-  delay(2000);
-}
+// There are 5 sensors in total, 2 outer, two inner and one center. Because of the difference, the outer sensors will provide a more significant change in direction.
+const float outerSensorFactor = 10;
+const float innerSensorFactor = 1;
 
-void loop() {
-  followLine(); // Calls a function which runs the linefollower.
-}
+const int lineSensorAmount = 5;
+int calibrationMinMax[lineSensorAmount][2] = {{0, 0},{0, 0},{0, 0},{0, 0},{0, 0}};              // Min and max calibration values
 
-// Function which returns an integer. The function gets the 
-int lineFollowerGetLineSensorSum(uint16_t lineSensorValues[lineSensorsAmount]) {
-  int lineSensorOutputSum = 0; // Output sum for linesensors. 
-  int lineSensorActiveAmount = 0; // Amount of active linesensors.
-
-  for (int i = 0; i < lineSensorsAmount; i++) { // Looping through the line sensors and seeing if they are detecting a line. 
-    if (lineSensorValues[i] > calibrationValues[i] + offsetMin) {
-      int lineSensorCenteringValue = 2 - i; // Finding the line sensor value (based on 5 line sensors, therefore no 2. must be the middle (as it is 0, 1, 2, 3, 4 which are the indexes for the line sensors))
-      lineSensorActiveAmount++; // Adds one to active line sensor
-      lineSensorOutputSum += (int)pow(abs(lineSensorCenteringValue * multiplier), exponentFactor) * offsetCalculation(lineSensorValues[i], calibrationValues[i]) * (1 - (-2 * (lineSensorCenteringValue >> 15))) * 1; 
-      // Does some math which will be used later to determine how much the robot must turn in order to stay on the line. The power of the absolute lineSensorCenteringValue is being used. Therefore if the value was negative, it must be converted into a negative number again. Here a simple trick using bit manipulation is being used: (1 - (-2 * (lineSensorCenteringValue >> 15)))
-    }
-  }
-
-  if (lineSensorActiveAmount == 0) { // Changes the speed if no linesensors have detected a black line.
-    defaultSpeed = maxSpeedWhenNoSensors;
-    return lineSensorLastSensorReading;
-  } else {
-    defaultSpeed = maxSpeed;
-  }
-
-  lineSensorLastSensorReading = lineSensorOutputSum;
-
-  return lineSensorOutputSum;
-}
-
-float offsetCalculation(int lineSensorValue, int calibrationValue) {
-  int lsvc = lineSensorValue - calibrationValue;
-  if (lsvc > offsetMax-offsetMin) {lsvc = offsetMax-offsetMin;}
+// Function using the calibration values, to map the sensorValue into a 0-100 number.
+float sensorMap(uint16_t sensorValue, int sensorPosition) {
+  int newSensorValue = map(sensorValue, calibrationMinMax[sensorPosition][0], calibrationMinMax[sensorPosition][1], 0, mappingMaxValue);
   
-  //float val = pow(lsvc, offsetFactor) / pow((offsetMax-offsetMin) * 1.0, offsetFactor);
-  float val = 1;
-  return val;
+  // If the number is higher than 100 or lower than 0.
+  if (newSensorValue > mappingMaxValue) newSensorValue = mappingMaxValue;
+  if (newSensorValue < 0) newSensorValue = 0;
+
+  return newSensorValue;
 }
 
-// Calibration algorithm. Basically just two loops, looping through each sensor and storing the value
-void lineSensorCalibrate() {
-  uint32_t lineSensorsAmountTotal[lineSensorsAmount] = {0, 0, 0, 0, 0}; // Variable to store the value
+// Function using the sensor values to calculate the error, the robot must perform.
+float pidController(uint16_t lineSensorValues[lineSensorAmount]) {
+  float error = startOffset;
+  
+  // The first two errors are multiplied by -1 to take which side the sensors are on, into account.
+  error += -1 * outerSensorFactor * (0 - sensorMap(lineSensorValues[0], 0));
+  error += -1 * innerSensorFactor * (0 - sensorMap(lineSensorValues[1], 1));
+  error += innerSensorFactor * (0 - sensorMap(lineSensorValues[3], 3));
+  error += outerSensorFactor * (0 - sensorMap(lineSensorValues[4], 4));
+  
+  // Delta time being calculated since last time called.
+  uint32_t deltaTime = micros() - prevTime;
+  prevTime = micros();
+  
+  // Delta error.
+  float deltaError = error - prevError;
+  prevError = error;
 
-  for (int i = 0; i < calibrationAmount; i++) { // First loop. This loops the amount of calibration points which must be taken.
-    uint16_t lineSensorValues[lineSensorsAmount]; // Variable to store the values from the linesensor.
-    lineSensors.read(lineSensorValues, QTR_EMITTERS_ON); // Reads the line sensor
-    
-    for (int j = 0; j < lineSensorsAmount; j++) { // Loops trough each value from the linesensor reading and adds them to the lineSensorsAmountTotal.
-      lineSensorsAmountTotal[j] += lineSensorValues[j];
+  // Calculating each constant.
+  int p = k_p * error;
+  int i = k_i * error * deltaTime / 1000.0;
+  int d = k_p * deltaError / deltaTime;
+
+  // Returning them added together.
+  return(p+i+d);
+}
+
+// Function for calibrating each sensor.
+void calibrateSensors() {
+  for (int i = 0; i < calibrationAmount; i++) {                                                 // First loop. This loops the amount of calibration points which must be taken.
+    if (i < calibrationAmount / 2) {
+      motors.setSpeeds(-calibrationSpeed, calibrationSpeed);
+    } else {
+      motors.setSpeeds(calibrationSpeed, -calibrationSpeed);
     }
-    delay(10); //waits 10 ms.
-  }
-  for (int i = 0; i < lineSensorsAmount; i++) { // Goes through each value and calculates the average.
-    calibrationValues[i] = lineSensorsAmountTotal[i] / calibrationAmount;
-    // Prints the final calibration value in the serial monitor.
-    Serial.print(calibrationValues[i]);
-    Serial.print(", ");
-  }
-  Serial.println("");
-}
 
-
-// Function, returning an int. Uses different varaibles to set the speed.
-int lineFollowerFixSpeed(int speed, int lineSensorOutputSum) {
-  if (speed > defaultSpeed) {
-    speed = defaultSpeed;
-  }
-
-  if (speed < maxNegativeSpeed) {
-    speed = maxNegativeSpeed;
-  }
-
-  if (speed < minSpeed && speed > 0) {
-    speed = 100;
+    uint16_t lineSensorValues[lineSensorAmount];                                                // Variable to store the values from the linesensor.
+    lineSensors.read(lineSensorValues, QTR_EMITTERS_ON);                                        // Reads the line sensor
     
-  } else if (speed <= 0 && speed > -1 * minSpeed) {
-    speed = 100;
-  } 
-
-  return speed;
+    for (int j = 0; j < lineSensorAmount; j++) {                                                // Loops trough each value from the linesensor reading and adds them to the lineSensorsAmountTotal.
+      if (calibrationMinMax[j][0] > lineSensorValues[j]) calibrationMinMax[j][0] = lineSensorValues[j];
+      else if (calibrationMinMax[j][1] < lineSensorValues[j]) calibrationMinMax[j][1] = lineSensorValues[j];
+    }
+    delay(10);                                                                                  //waits 10 ms for the robot to turn.
+  }
+  motors.setSpeeds(0,0);
 }
 
-// Line follower function, which calculates the speed based on the lineSensorOutputSum and sets the speed for the motors.
-void lineFollowerDriver(int lineSensorOutputSum) {
-  int speed_left = lineFollowerFixSpeed(-1 * speedFactor * lineSensorOutputSum + defaultSpeed, lineSensorOutputSum);
-  int speed_right = lineFollowerFixSpeed(speedFactor * lineSensorOutputSum + defaultSpeed, lineSensorOutputSum);
-  motors.setSpeeds(speed_left, speed_right);
+// Setup function
+void setup() {
+  lineSensors.initFiveSensors();                                                                // Initialization 
+  Serial.begin(9600);                                                                           // Beginning the serial port
+  calibrateSensors();                                                                           // Calibrates the sensors
+
 }
 
-// Main function for following a line.
-void followLine() {
-  uint16_t lineSensorValues[lineSensorsAmount]; // Defines the variable holding the reading
-  lineSensors.read(lineSensorValues, QTR_EMITTERS_ON); // Gets a reading
+// Loop function
+void loop() { 
 
-  int lineSensorOutputSum = lineFollowerGetLineSensorSum(lineSensorValues); //Calculates the lineSensorOutputSum
-  lineFollowerDriver(lineSensorOutputSum); // Gets the motors to turn
+  uint16_t lineSensorValues[lineSensorAmount];                                                  // Variable to store the values from the linesensor.
+  lineSensors.read(lineSensorValues, QTR_EMITTERS_ON);                                          // Reads the line sensor
+  
+  float error = pidController(lineSensorValues);                                                // Gets the error from the linesensors
+
+  int speed = defaultSpeed - abs(error) / defactorAcc;                                          // Calculates the speed with a deacceleration factor based on the error
+  if (speed < minSpeed) speed = minSpeed;                                                       // The speed must not get lower than minSpeed
+
+  motors.setSpeeds(speed - error/defactor, speed + error/defactor);                             // Applies the speed together with the error.
 }
