@@ -12,6 +12,8 @@ Zumo32U4Motors motors;
 Zumo32U4Encoders encoders;
 Zumo32U4LineSensors lineSensors;
 
+#define PI 3.1415926535897932384626433832795
+
 /*
  Class for calibrating the robot to a line. 
  The class is created such as it can be copy pasted alone into any programme and work. 
@@ -28,13 +30,13 @@ class Calibrator {
     static const int lineSensorsAmount = 5;                                     // Amount of linesensors
     const int offset = 600;                                                     // Light offset between light and dark
     const int calibrationAmount = 200;                                          // Amount of calibrations
-    const int distanceAfterCalibration = 25;                                    // Distance the robot drives forward after the calibration is done
+    const int distanceAfterCalibration = 0;                                     // Distance the robot drives forward after the calibration is done
     uint16_t calibrationValues[lineSensorsAmount] = {0, 0, 0, 0, 0};            // Calibration values when calibrating
 
     // Different variable for controlling the correction algorithm and 
     const int calibrateSpeed = 100;                                             // Speed when calibrating
-    const int maxCalibrationDistance = 50;                                      // The maximum distance, the robot may move before it just turns a bit.
-    const float motorDifference = 38.78/38.8;                                   // There is a small difference in the diameter of each wheel. This is used here to adjust for this behaviour.
+    const int maxCalibrationDistance = 45;                                      // The maximum distance, the robot may move before it just turns a bit.
+    const float motorDifference = 38.64/38.8;                                   // There is a small difference in the diameter of each wheel. This is used here to adjust for this behaviour.
     const float angleThreshhold = 0.25;                                         // Threshhold on how precise the robot needs to be before it may continue to move.
 
     float encoderLength = 0;                                                    // Storing the difference in a new variable, so the old one can be used again.
@@ -59,7 +61,7 @@ class Calibrator {
         encoderDifference += straightLineDriver(0);
 
         if (encoderDifference > maxCalibrationDistance) {                       // If the robot has driven more than 50mm, it stops and
-          encoderDifference = maxCalibrationDistance + 48.5;                    // 48.5 is added to the distance. This is because it will now drive back to where it with one of the sensors detected a black line and rotate here. 
+          encoderDifference = maxCalibrationDistance;                           // The line is not long enough for this method to work reliably when comming from a sharp angle.
 
           break;
         }
@@ -72,7 +74,7 @@ class Calibrator {
 
     // Function converting the encoder value to a distance in mm.
     float calcDistance(float encoderValue) {
-      return (encoderValue/909.7 * 40 * 3.14159);
+      return (encoderValue/909.7 * 40 * PI);
     }
 
     // Function for resetting the encoders.
@@ -117,7 +119,7 @@ class Calibrator {
           resetEncoders();
           
           // If the angle is in the threshhold. The angle is also changed from being in radians to degreese. 
-          if ((angle / 3.14159265 * 180) < angleThreshhold && (angle / 3.14159265 * 180) > -1 * angleThreshhold) {
+          if ((angle / PI * 180) < angleThreshhold && (angle / PI * 180) > -1 * angleThreshhold) {
             straightLine(distanceAfterCalibration);                             // Drives in a straight line for a specified distance, making it easy if a linedetector needs to be used just after calibration. 
             resetEncoders(); 
             
@@ -157,6 +159,10 @@ class Calibrator {
     void lineSensorCalibrate() {
       uint32_t lineSensorsAmountTotal[lineSensorsAmount];                       // Variable to store the value
 
+      for (int i = 0; i < lineSensorsAmount; i++) {
+        lineSensorsAmountTotal[i] = 0;
+      }
+
       for (int i = 0; i < calibrationAmount; i++) {                             // First loop. This loops the amount of calibration points which must be taken.
         uint16_t lineSensorValues[lineSensorsAmount];                           // Variable to store the values from the linesensor.
         lineSensors.read(lineSensorValues, QTR_EMITTERS_ON);                    // Reads the line sensor
@@ -164,20 +170,22 @@ class Calibrator {
         for (int j = 0; j < lineSensorsAmount; j++) {                           // Loops trough each value from the linesensor reading and adds them to the lineSensorsAmountTotal.
           lineSensorsAmountTotal[j] += lineSensorValues[j];
         }
+        delay(10);
       }
 
       for (int i = 0; i < lineSensorsAmount; i++) {                             // Goes through each value and calculates the average.
-        calibrationValues[i] = lineSensorsAmountTotal[i] / calibrationAmount;   // Calculating the average calibration value.
+        calibrationValues[i] = lineSensorsAmountTotal[i] / 200;   // Calculating the average calibration value.
       }
+
     }
 
     // Simple function for reading one of the line sensors. The input taken corresponds to the specified linesensor.
-    bool readLineSensor(int no) {
+    bool readLineSensor(int i) {
       uint16_t lineSensorValues[lineSensorsAmount];                             // Defines the variable holding the reading
       lineSensors.read(lineSensorValues, QTR_EMITTERS_ON);                      // Reads the line sensor
 
       // Returns true if detected a line, false if not.
-      if (lineSensorValues[no] > calibrationValues[no] + offset) { 
+      if (lineSensorValues[i] > calibrationValues[i] + offset) { 
         return true;
       }  
       return false;
@@ -201,7 +209,7 @@ class Calibrator {
 
       motors.setSpeeds(motorLeft, motorRight); 
 
-      float encoderRelativeDist = (encoderLeft + encoderRight)/(2 * 909.7) * 40 * 3.14159 * dir; 
+      float encoderRelativeDist = (encoderLeft + encoderRight)/(2 * 909.7) * 40 * PI * dir; 
       
       return encoderRelativeDist;
     }
@@ -228,21 +236,21 @@ class Calibrator {
     }
 
     // Function to turn the ZUMO using math and 
-    void turnByEncoder(float degrees) {
+    void turnByEncoder(float angle) {
       resetEncoders();
       
       // Direction and the distance already turned.
       int direction = 1;                                                      
       float turnedDist = 0;
     
-      if (degrees < 0) {
+      if (angle < 0) {
         direction = -1;
       }
 
       // While loop untill the robot has rotated the specified amount. 
-      while (turnedDist < 85 * 3.14159265 * abs(degrees) / (2 * 3.14159265)) {
+      while (turnedDist < 85 * PI * abs(angle) / (2 * PI)) {
         // The closer it is to being finished rotating, the slower it will go to prevent overshooting the specified distance.
-        int deacceleration = 35 / (1 + 85 * 3.14159265 * abs(degrees)) / (2 * 3.14159265 - abs(turnedDist));
+        int deacceleration = 35 / (1 + 85 * PI * abs(angle)) / (2 * PI - abs(turnedDist));
         int turningSpeed = calibrateSpeed - deacceleration;
 
         //Turns in place.
@@ -265,7 +273,7 @@ class Calibrator {
 The main code. A lot of the functions which is used, is from the class above.
 */
 
-Calibrator calibratorObj(1, 3, 19);                                             // Defining the object used for calibrating the robot.
+Calibrator calibratorObj(0, 4, 89);                                             // Defining the object used for calibrating the robot.
 
 const int programmeLength = 3;
 
@@ -277,10 +285,11 @@ const int lineSensorsAmount = calibratorObj.lineSensorsAmount;
 
 int state = 0;                                                                  // Defined from the programme. 0: Drive straigt, 1: Turn, 2: Drive untill a black line is detected.
 
-int16_t programmeDescription[programmeLength][2] = {{0, 45},{1, 40},{2, 0}};    //For each programme {programme, value}, where programme is describing the state.
+int16_t programmeDescription[programmeLength][2] = {{0, 80},{1, -55},{2, 0}};    //For each programme {programme, value}, where programme is describing the state.
 
 
 void setup() {
+  Serial.begin(9600);
   lineSensors.initFiveSensors();                                                // Initialization 
   calibratorObj.lineSensorCalibrate();                                          // Calibrates the linesensors in the class
   while (!calibratorObj.lineCalibrator());                                      // Runs untill the robot has calibrated itself to the line
@@ -289,32 +298,40 @@ void setup() {
 // Loop function. Has the task of running the programme. 
 void loop() {
   runProgramme();
+  while(true);
 }
 
 // Function for running the programme. 
 void runProgramme() {
   for (int i = 0; i < programmeLength; i++) {
+    Serial.println(programmeDescription[i][0]);
     switch(programmeDescription[i][0]) {
       case 0:
         calibratorObj.straightLine(programmeDescription[i][1]);                 // As the class calibratorObj already have a build in straightLine, this is used.
         break;
 
       case 1:
-        calibratorObj.turnByEncoder(programmeDescription[i][1]);                // As the class calibratorObj already have a build in turner, this is used.
+        calibratorObj.turnByEncoder(programmeDescription[i][1] / 180.0 * PI);                // As the class calibratorObj already have a build in turner, this is used.
         break;
+
       case 2:
-        if (!blackTapeRegistered) {
+        
+
+        while (!blackTapeRegistered()) {
           calibratorObj.straightLineDriver(1);                                  // A function which continiously needs to be called to drive the robot forward.
-        } else {
-          motors.setSpeeds(0, 0);
-        }
+        } 
+        motors.setSpeeds(0, 0);
+
         break;
     }
   } 
 }
 
 // Function to determine if any of the linesensors detect a black line.
-bool blackTapeRegistered(uint16_t lineSensorValues[lineSensorsAmount]) {
+bool blackTapeRegistered() {
+  uint16_t lineSensorValues[lineSensorsAmount];                                 // Variable to store the values from the linesensor.
+  lineSensors.read(lineSensorValues, QTR_EMITTERS_ON);                          // Reads the line sensor
+  
   for (int i = 0; i < lineSensorsAmount; i++) {                                 // Looping through the line sensors and seeing if they are detecting a line. 
     if (calibratorObj.readLineSensor(i)) {
       return true;
