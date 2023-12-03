@@ -2,122 +2,170 @@
 #include <Zumo32U4.h>
 
 Zumo32U4Encoders encoders;
-Zumo32U4IMU imu;
-Zumo32U4OLED oled;
 Zumo32U4Motors motors;
-Zumo32U4ButtonA buttonA;
+Zumo32U4LineSensors lineSensors;
 
-int movementCommand = 0;
-int movementParameter = 0;
-
-const int countJump = 100;
-const int maxDist = 100;
+const int maxDist = 41;
+float dist= 0;
 int speed = 100;
 float wheelCirc = 13.0;
-int stage = 0;
-int chosenCommand = 0;
+int threshold = 600;
+bool tapeReached = false, doneAligning = false;
+String sideSensor ="";
 
-uint32_t turnAngle = 0;
-int16_t turnRate;
-int16_t gyroOffset;
-uint16_t gyroLastUpdate = 0;
+#define num_linesensors 3
+uint16_t lineSensorValues[num_linesensors];
 
-void setup() {
+void setup(){
+  lineSensors.initThreeSensors();
   Serial.begin(9600);
+  delay(1000);
 }
 
 void loop() {
-  switch (stage) {
-    case 0:
-    selectParameter();
-    break;
-    case 1:
-    executeMovement();
-    break;
+  readLineSensors();
+  Serial.println("0");
+
+  if ( lineSensorValues[2] >= threshold && !tapeReached ){
+    stop();
+    Serial.println("1");
+    tapeReached = true;
+    sideSensor= "right";
+
+  } else if ( lineSensorValues[0]>= threshold && !tapeReached ) {
+    stop();
+    Serial.println("2");
+    tapeReached = true;
+    sideSensor="left";
   }
-  delay(50);
-}
+  else if (lineSensorValues[0] < threshold && lineSensorValues[2] < threshold){
+    forward();
+    Serial.println("3");
+  }
+  else if (tapeReached == true && !doneAligning){
+    alignZumo();
+    doneAligning = true;
+    Serial.println("4");
+  }
+  else if (doneAligning){
+    resetEncoders();
+    
+    while (dist < maxDist){
+      forward();
+      dist += getDistance();
+      
+    }
+    stop();
 
-void selectParameter() {
-  readEncodersParameter();
-  switch (chosenCommand) {
-    case 0: 
-      if (movementParameter < 0) {
-        movementParameter = 0;
-      } else if (movementParameter > maxDist) {
-        movementParameter = maxDist;
-      }
-      OLEDSelectParameter();
-      if (buttonA.isPressed()) {
-        stage = 1;
-        buttonA.waitForRelease(); 
-      }
-      break;
   }
 }
 
-void executeMovement() {
-  switch (chosenCommand) {
-    case 0:
-      while (getDistance() < movementParameter) {
-        forward();
-        delay(100);
-      }
-      stop();
-      movementCommand = 0;
-      movementParameter = 0;
-      stage = 0;
-      chosenCommand = 0;
-      break;
-  }
- 
+void readLineSensors(){   //  Reads value of linesensors and insert the values into the array "lineSensorValues"
+  lineSensors.read(lineSensorValues, QTR_EMITTERS_ON);
 }
 
-void stop() {
-  motors.setSpeeds(0, 0);
-}
-
-void forward() {
+void forward(){
   motors.setSpeeds(speed, speed);
 }
 
-void OLEDSelectMovement() {
-  switch (stage) {
-    case 0:
-      printOLED("Command>", "Forward");
-      break;
+void stop(){  //  Stops Zumo
+  motors.setSpeeds(0, 0);
+}
+
+void alignZumo(){
+  driveToTape();
+  
+  driveOverTape();
+
+  driveBackToTape();
+}
+
+void driveToTape(){
+  bool Run = true;
+
+  if (sideSensor == "right"){
+    motors.setSpeeds(100,0);
+    while (Run){
+      readLineSensors();
+      if (lineSensorValues[0] >= threshold){
+        stop();
+        Run = false;
+      }
+    }
+
   }
-}
-
-void OLEDSelectParameter() {
-  switch (stage) {
-    case 0 :
-    printOLED("<Distance:", String(movementParameter));
-    break;
-    case 1:
-     printOLED("<Distance:", String(getDistance()));
+  else if (sideSensor == "left"){
+    motors.setSpeeds(0,100);
+    while (Run){
+      readLineSensors();
+      if (lineSensorValues[2] >= threshold){
+        stop();
+        Run = false;
+      }
+    }
 
   }
+
+}
+void driveOverTape(){
+  bool run = true;
+
+  forward();
+  
+  while (run){
+    readLineSensors();
+
+    if (lineSensorValues[0] < threshold && lineSensorValues[2] < threshold){
+      run = false;
+    }
+
+    if (lineSensorValues[0] < threshold){
+      motors.setLeftSpeed(0);
+    }
+    
+    if(lineSensorValues[2] < threshold){
+      motors.setRightSpeed(0);
+    }
+  }
+  
+  
+}
+void driveBackToTape(){
+  bool run = true;
+
+  motors.setSpeeds(-50, -50);
+
+  while(run){
+    readLineSensors();
+
+    if (lineSensorValues[0] >= threshold && lineSensorValues[2] >= threshold){
+      run = false;
+    }
+
+    if (lineSensorValues[0] >= threshold){
+      motors.setLeftSpeed(0);
+    }
+    
+    if(lineSensorValues[2] >= threshold){
+      motors.setRightSpeed(0);
+    }
+  }
+
 }
 
-void printOLED(String s0, String s1) {
-  oled.clear();
-  oled.print(s0);
-  oled.gotoXY(0, 1);
-  oled.print(s1);
-}
 
-float getDistance() {
-  int countsL = encoders.getCountsLeft();
-  int countsR = encoders.getCountsRight();
-
-  float distanceL = countsL / 900.0 * wheelCirc;
-  float distanceR = countsR / 900.0 * wheelCirc;
-
-  return (distanceL + distanceR) / 2;
-}
-
-void resetEncoders() {
+void resetEncoders(){
   encoders.getCountsAndResetLeft();
   encoders.getCountsAndResetRight();
+}
+
+float getDistance(){
+  int countsL = encoders.getCountsAndResetLeft();
+  int countsR = encoders.getCountsAndResetRight();
+
+  float distanceL = countsL/900.0 * wheelCirc;
+  float distanceR = countsR/900.0 * wheelCirc;
+
+  
+  return (distanceL + distanceR)/2;
 }
