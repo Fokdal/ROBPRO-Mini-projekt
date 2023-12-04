@@ -4,11 +4,12 @@
 Zumo32U4Encoders encoders;
 Zumo32U4Motors motors;
 Zumo32U4LineSensors lineSensors;
+Zumo32U4OLED OLED;
 
 const int maxDist = 41;
 float dist= 0;
 int speed = 100;
-float wheelCirc = 13.0;
+float wheelCirc = 11.94;
 int threshold = 600;
 bool tapeReached = false, doneAligning = false;
 String sideSensor ="";
@@ -30,15 +31,15 @@ void loop() {
     stop();
     Serial.println("1");
     tapeReached = true;
-    sideSensor= "right";
+    sideSensor = "right";
 
-  } else if ( lineSensorValues[0]>= threshold && !tapeReached ) {
+  } else if ( lineSensorValues[0] >= threshold && !tapeReached ) {
     stop();
     Serial.println("2");
     tapeReached = true;
     sideSensor="left";
   }
-  else if (lineSensorValues[0] < threshold && lineSensorValues[2] < threshold){
+  else if (lineSensorValues[0] < threshold && lineSensorValues[2] < threshold && !doneAligning){
     forward();
     Serial.println("3");
   }
@@ -46,18 +47,32 @@ void loop() {
     alignZumo();
     doneAligning = true;
     Serial.println("4");
-  }
-  else if (doneAligning){
     resetEncoders();
-    
-    while (dist < maxDist){
-      forward();
-      dist += getDistance();
-      
-    }
-    stop();
-
   }
+  else {
+    driveLength();
+  }
+  
+  
+}
+
+void driveLength(){
+  bool run = true;
+
+  while (run){
+    dist = getDistance();
+    OLED.clear();
+    OLED.print(dist);
+
+    if (dist > maxDist){
+      run = false;
+      stop();
+    }
+    else {
+      forward();
+    }
+  }
+  
 }
 
 void readLineSensors(){   //  Reads value of linesensors and insert the values into the array "lineSensorValues"
@@ -95,7 +110,7 @@ void driveToTape(){
 
   }
   else if (sideSensor == "left"){
-    motors.setSpeeds(0,100);
+    motors.setSpeeds(0, 100);
     while (Run){
       readLineSensors();
       if (lineSensorValues[2] >= threshold){
@@ -160,12 +175,13 @@ void resetEncoders(){
 }
 
 float getDistance(){
-  int countsL = encoders.getCountsAndResetLeft();
-  int countsR = encoders.getCountsAndResetRight();
+  int countsL = encoders.getCountsLeft();
+  int countsR = encoders.getCountsRight();
 
-  float distanceL = countsL/900.0 * wheelCirc;
-  float distanceR = countsR/900.0 * wheelCirc;
+  float distanceL = countsL/909.7 * wheelCirc;
+  float distanceR = countsR/909.7 * wheelCirc;
 
   
   return (distanceL + distanceR)/2;
 }
+
