@@ -17,23 +17,23 @@ float prevError = 0;                                                            
 const float mappingMaxValue = 100;                                                              // Before the programme is started, each sensor is calibrated. This is then when the programme is running mapped into a scale from 0 to 100.
 
 // Variables for the PID controller
-const float k_p = 0.55;
-const float k_i = 0.8;
-const float k_d = 20;
+const float k_p = 0.6;
+const float k_i = 0.1;
+const float k_d = 10;
 
 // Other variables controlling the movement.
 const int defaultSpeed = 400;
-const int minSpeed = 300;
+const int minSpeed = 250;
 const float defactorAcc = 400/(defaultSpeed * 1.0);
 const float defactor = 200/(defaultSpeed * 1.0);
 
-const float startOffset = 20;                                                                   // When the programme starts, the ZUMO is offsat, so it has to drive a shorter route.
+const float startOffset = 40;                                                                   // When the programme starts, the ZUMO is offsat, so it has to drive a shorter route.
 
 const int calibrationSpeed = 200;                                                               // Speed for calibrating
-const int calibrationAmount = 200;                                                              // Amount of calibrations.
+const int calibrationAmount = 800;                                                              // Amount of calibrations.
 
 // There are 5 sensors in total, 2 outer, two inner and one center. Because of the difference, the outer sensors will provide a more significant change in direction.
-const float outerSensorFactor = 10;
+const float outerSensorFactor = 20;
 const float innerSensorFactor = 1;
 
 const int lineSensorAmount = 5;
@@ -93,7 +93,7 @@ void calibrateSensors() {
       if (calibrationMinMax[j][0] > lineSensorValues[j]) calibrationMinMax[j][0] = lineSensorValues[j];
       else if (calibrationMinMax[j][1] < lineSensorValues[j]) calibrationMinMax[j][1] = lineSensorValues[j];
     }
-    delay(10);                                                                                  //waits 10 ms for the robot to turn.
+    delay(5);                                                                                   //waits for the robot to turn.
   }
   motors.setSpeeds(0,0);
 }
@@ -101,9 +101,7 @@ void calibrateSensors() {
 // Setup function
 void setup() {
   lineSensors.initFiveSensors();                                                                // Initialization 
-  Serial.begin(9600);                                                                           // Beginning the serial port
   calibrateSensors();                                                                           // Calibrates the sensors
-
 }
 
 // Loop function
