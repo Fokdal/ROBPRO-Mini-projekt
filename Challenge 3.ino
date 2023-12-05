@@ -35,7 +35,6 @@ void loop() {
     Serial.print(proxSensors.countsLeftWithLeftLeds());
     Serial.print("  Right: ");
     Serial.print(proxSensors.countsRightWithRightLeds());
-    Serial.println();
 
     int leftSensorCount = proxSensors.countsLeftWithLeftLeds();
     int rightSensorCount = proxSensors.countsRightWithRightLeds();
